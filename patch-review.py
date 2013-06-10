@@ -18,11 +18,22 @@ string = """
     Signed-off-by: Jiri Moskovcak <jmoskovc@redhat.com>
 """
 
+
+def read_commits():
+    git_log = Popen(["git", "log", "origin/master..HEAD"], stdout=PIPE, bufsize=-1).communicate()[0]
+    #print "'%s'" % git_log
+    if not git_log:
+        print "No new commits"
+        return ""
+
+    return git_log
+
+
 def parse_commits(git_log):
     commit_start = "commit"
     commits = {}
     lines = git_log.split('\n')
-    print lines
+    #print lines
     current_commit = None
     commit = None
     for line in lines:
@@ -41,9 +52,12 @@ def parse_commits(git_log):
 
     return commits
 
+
 def check_signoff():
     retval = OK
-    git_log = Popen(["git", "log", "origin/master..HEAD"], stdout=PIPE, bufsize = -1).communicate()[0]
+    git_log = read_commits()
+    if not git_log:
+        return
     commits = parse_commits(git_log)
 
     signoff_regexp = re.compile(r'(Signed-off-by: \w+ \w+ <\w+@\w+(?:\.\w+)+>)')
@@ -56,5 +70,30 @@ def check_signoff():
 
     return retval
 
+
+def check_ticket():
+    """
+    Checks if the commit references a ticket, either form github or bugzilla
+    """
+    #print "ticket"
+    retval = OK
+    git_log = read_commits()
+    if not git_log:
+        return
+    commits = parse_commits(git_log)
+    rhbz_regexp = re.compile(r'(rhbz#\d+)')
+    github_regexp = re.compile(r'(loses #\d+)')
+
+    for sha, msg in commits.items():
+        matches_rhbz = rhbz_regexp.findall(msg)
+        matches_github = github_regexp.findall(msg)
+        if not (matches_rhbz or matches_github):
+            print "ERROR: The patch '%s' doesn't reference any ticket, it should either reference github (closes #12345) or bugzilla (rhbz#12345)" % sha
+            retval = FAIL
+
+    return retval
+
+
 if __name__ == "__main__":
     check_signoff()
+    check_ticket()
